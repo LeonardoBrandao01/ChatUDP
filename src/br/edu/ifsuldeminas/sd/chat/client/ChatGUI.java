@@ -9,305 +9,394 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import java.awt.event.*;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
+/**
+ * Interface gráfica simples para o Chat UDP/TCP.
+ * Implementa {@link MessageContainer} para receber mensagens do receiver.
+ */
 public class ChatGUI extends JFrame implements MessageContainer {
-    // UI Components for Connection Setup
-    private JTextField txtPortaLocal;
-    private JTextField txtIPRemoto;
-    private JTextField txtPortaRemota;
-    private JTextField txtUsername;
-    private JButton btnConnect;
-    private JLabel lblStatus;
 
-    // UI Components for Chat Log and Message Input
-    private JTextArea txtChatLog;
-    private JTextField txtMessageInput;
-    private JButton btnEnviar;
+    // ── Campos de configuração ────────────────────────────────────────────
+    private JTextField  fldPortaLocal;
+    private JTextField  fldIPRemoto;
+    private JTextField  fldPortaRemota;
+    private JTextField  fldUsername;
 
-    // Chat API variables
-    private Sender chatSender = null;
-    private boolean isConnected = false;
+    // ── Seleção de protocolo ──────────────────────────────────────────────
+    private JRadioButton radUDP;
+    private JRadioButton radTCP;
+    private JLabel       lblModo;
+    private JComboBox<String> cmbModo; // Servidor / Cliente (TCP)
 
+    // ── Botão e status ────────────────────────────────────────────────────
+    private JButton btnIniciar;
+    private JLabel  lblStatus;
+
+    // ── Área de chat ──────────────────────────────────────────────────────
+    private JTextArea  txtLog;
+    private JTextField fldMensagem;
+    private JButton    btnEnviar;
+
+    // ── Estado interno ────────────────────────────────────────────────────
+    private Sender  sender    = null;
+    private boolean connected = false;
+    private String  username  = "Usuário";
+
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    // ─────────────────────────────────────────────────────────────────────
     public ChatGUI() {
-        super("Chat UDP - Interface Gráfica");
-        setupUI();
+        super("Chat UDP / TCP");
+        buildUI();
+        wireListeners();
     }
 
-    private void setupUI() {
-        // Use system look and feel for a native appearance
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            // Ignore and fall back to default
-        }
+    // ══════════════════════════════════════════════════════════════════════
+    //  CONSTRUÇÃO DA INTERFACE
+    // ══════════════════════════════════════════════════════════════════════
 
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(550, 600);
-        setMinimumSize(new Dimension(450, 500));
-        setLocationRelativeTo(null); // Center on screen
-        setLayout(new BorderLayout(10, 10));
+    private void buildUI() {
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setSize(560, 580);
+        setMinimumSize(new Dimension(480, 500));
+        setLocationRelativeTo(null);
 
-        // Root panel with padding
-        JPanel rootPanel = new JPanel(new BorderLayout(10, 10));
-        rootPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        setContentPane(rootPanel);
+        JPanel root = new JPanel(new BorderLayout(6, 6));
+        root.setBorder(new EmptyBorder(10, 10, 10, 10));
+        setContentPane(root);
 
-        // --- TOP PANEL: Connection Settings ---
-        JPanel connectionPanel = new JPanel(new GridBagLayout());
-        connectionPanel.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createEtchedBorder(), "Configurações de Conexão",
-                TitledBorder.LEFT, TitledBorder.TOP,
-                new Font("Segoe UI", Font.BOLD, 12), new Color(44, 62, 80)));
+        root.add(buildConfigPanel(), BorderLayout.NORTH);
+        root.add(buildLogPanel(),    BorderLayout.CENTER);
+        root.add(buildInputPanel(),  BorderLayout.SOUTH);
+    }
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(6, 6, 6, 6);
-        gbc.weightx = 1.0;
+    // ── Painel de configuração ────────────────────────────────────────────
+    private JPanel buildConfigPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "Configurações de Conexão",
+                TitledBorder.LEFT, TitledBorder.TOP));
 
-        // Row 0: Local Port & Username
-        gbc.gridx = 0; gbc.gridy = 0;
-        connectionPanel.add(new JLabel("Porta Local:"), gbc);
-        gbc.gridx = 1;
-        txtPortaLocal = new JTextField("9001");
-        connectionPanel.add(txtPortaLocal, gbc);
+        GridBagConstraints g = new GridBagConstraints();
+        g.fill    = GridBagConstraints.HORIZONTAL;
+        g.insets  = new Insets(4, 6, 4, 6);
+        g.weightx = 1.0;
 
-        gbc.gridx = 2;
-        connectionPanel.add(new JLabel("Seu Nome:"), gbc);
-        gbc.gridx = 3;
-        txtUsername = new JTextField("Usuario");
-        connectionPanel.add(txtUsername, gbc);
+        // Linha 0 — Porta Local | IP Remoto
+        g.gridy = 0; g.gridx = 0; g.gridwidth = 1;
+        panel.add(new JLabel("Porta Local:"), g);
+        g.gridx = 1;
+        fldPortaLocal = new JTextField("9001");
+        panel.add(fldPortaLocal, g);
 
-        // Row 1: Remote IP & Remote Port
-        gbc.gridx = 0; gbc.gridy = 1;
-        connectionPanel.add(new JLabel("IP Remoto:"), gbc);
-        gbc.gridx = 1;
-        txtIPRemoto = new JTextField("localhost");
-        connectionPanel.add(txtIPRemoto, gbc);
+        g.gridx = 2;
+        panel.add(new JLabel("IP Remoto:"), g);
+        g.gridx = 3;
+        fldIPRemoto = new JTextField("localhost");
+        panel.add(fldIPRemoto, g);
 
-        gbc.gridx = 2;
-        connectionPanel.add(new JLabel("Porta Remota:"), gbc);
-        gbc.gridx = 3;
-        txtPortaRemota = new JTextField("9002");
-        connectionPanel.add(txtPortaRemota, gbc);
+        // Linha 1 — Porta Remota | Seu Nome
+        g.gridy = 1; g.gridx = 0;
+        panel.add(new JLabel("Porta Remota:"), g);
+        g.gridx = 1;
+        fldPortaRemota = new JTextField("9002");
+        panel.add(fldPortaRemota, g);
 
-        // Row 2: Status & Connect Button
-        gbc.gridx = 0; gbc.gridy = 2;
-        lblStatus = new JLabel("🔴 Desconectado");
-        lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 11));
-        connectionPanel.add(lblStatus, gbc);
+        g.gridx = 2;
+        panel.add(new JLabel("Seu Nome:"), g);
+        g.gridx = 3;
+        fldUsername = new JTextField("Usuário");
+        panel.add(fldUsername, g);
 
-        gbc.gridx = 1; gbc.gridwidth = 3;
-        btnConnect = new JButton("Iniciar Chat");
-        btnConnect.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btnConnect.setBackground(new Color(46, 204, 113));
-        btnConnect.setForeground(Color.WHITE);
-        btnConnect.setFocusPainted(false);
-        connectionPanel.add(btnConnect, gbc);
+        // Linha 2 — Protocolo | Modo TCP
+        g.gridy = 2; g.gridx = 0;
+        panel.add(new JLabel("Protocolo:"), g);
 
-        rootPanel.add(connectionPanel, BorderLayout.NORTH);
+        g.gridx = 1;
+        JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        radUDP = new JRadioButton("UDP", true);
+        radTCP = new JRadioButton("TCP", false);
+        ButtonGroup bg = new ButtonGroup();
+        bg.add(radUDP);
+        bg.add(radTCP);
+        radioPanel.add(radUDP);
+        radioPanel.add(radTCP);
+        panel.add(radioPanel, g);
 
-        // --- CENTER PANEL: Chat Log ---
-        txtChatLog = new JTextArea();
-        txtChatLog.setEditable(false);
-        txtChatLog.setLineWrap(true);
-        txtChatLog.setWrapStyleWord(true);
-        txtChatLog.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        txtChatLog.setBackground(new Color(250, 250, 250));
-        txtChatLog.setBorder(new EmptyBorder(8, 8, 8, 8));
+        g.gridx = 2;
+        lblModo = new JLabel("Modo TCP:");
+        lblModo.setEnabled(false);
+        panel.add(lblModo, g);
 
-        JScrollPane scrollPane = new JScrollPane(txtChatLog);
-        scrollPane.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(189, 195, 199)),
-                new EmptyBorder(0, 0, 0, 0)));
-        rootPanel.add(scrollPane, BorderLayout.CENTER);
+        g.gridx = 3;
+        cmbModo = new JComboBox<>(new String[]{"Servidor (escutar)", "Cliente (conectar)"});
+        cmbModo.setEnabled(false);
+        panel.add(cmbModo, g);
 
-        // --- BOTTOM PANEL: Message Input ---
-        JPanel inputPanel = new JPanel(new BorderLayout(8, 8));
+        // Linha 3 — Status + botão
+        g.gridy = 3; g.gridx = 0; g.gridwidth = 2;
+        lblStatus = new JLabel("● Desconectado");
+        lblStatus.setForeground(Color.RED);
+        panel.add(lblStatus, g);
 
-        txtMessageInput = new JTextField();
-        txtMessageInput.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        txtMessageInput.setEnabled(false); // Disabled until connected
+        g.gridx = 2; g.gridwidth = 2;
+        btnIniciar = new JButton("Iniciar Chat");
+        panel.add(btnIniciar, g);
+
+        return panel;
+    }
+
+    // ── Área de mensagens ─────────────────────────────────────────────────
+    private JScrollPane buildLogPanel() {
+        txtLog = new JTextArea();
+        txtLog.setEditable(false);
+        txtLog.setLineWrap(true);
+        txtLog.setWrapStyleWord(true);
+        txtLog.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
+        txtLog.setBorder(new EmptyBorder(6, 8, 6, 8));
+
+        JScrollPane scroll = new JScrollPane(txtLog);
+        scroll.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "Mensagens",
+                TitledBorder.LEFT, TitledBorder.TOP));
+        return scroll;
+    }
+
+    // ── Barra de envio ────────────────────────────────────────────────────
+    private JPanel buildInputPanel() {
+        JPanel panel = new JPanel(new BorderLayout(6, 0));
+        panel.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+        fldMensagem = new JTextField();
+        fldMensagem.setEnabled(false);
+        fldMensagem.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
 
         btnEnviar = new JButton("Enviar");
-        btnEnviar.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btnEnviar.setEnabled(false); // Disabled until connected
-        btnEnviar.setBackground(new Color(46, 204, 113));
-        btnEnviar.setForeground(Color.WHITE);
-        btnEnviar.setFocusPainted(false);
+        btnEnviar.setEnabled(false);
 
-        inputPanel.add(txtMessageInput, BorderLayout.CENTER);
-        inputPanel.add(btnEnviar, BorderLayout.EAST);
+        panel.add(fldMensagem, BorderLayout.CENTER);
+        panel.add(btnEnviar,   BorderLayout.EAST);
+        return panel;
+    }
 
-        rootPanel.add(inputPanel, BorderLayout.SOUTH);
+    // ══════════════════════════════════════════════════════════════════════
+    //  LISTENERS
+    // ══════════════════════════════════════════════════════════════════════
 
-        // --- LISTENERS ---
-        btnConnect.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                handleConnection();
-            }
+    private void wireListeners() {
+        // Habilita combo de modo apenas quando TCP estiver marcado
+        radTCP.addItemListener(e -> {
+            boolean tcp = radTCP.isSelected();
+            lblModo.setEnabled(tcp);
+            cmbModo.setEnabled(tcp);
         });
 
-        ActionListener sendAction = new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                sendMessage();
-            }
-        };
+        btnIniciar.addActionListener(e -> handleConnect());
 
-        btnEnviar.addActionListener(sendAction);
-        txtMessageInput.addActionListener(sendAction); // Sends message when Enter is pressed
+        ActionListener enviar = e -> handleSend();
+        btnEnviar.addActionListener(enviar);
+        fldMensagem.addActionListener(enviar); // Enter também envia
     }
 
-    private void handleConnection() {
-        if (isConnected) return;
+    // ══════════════════════════════════════════════════════════════════════
+    //  LÓGICA DE CONEXÃO
+    // ══════════════════════════════════════════════════════════════════════
 
-        // Validate local port
+    private void handleConnect() {
+        if (connected) return;
+
+        // Valida porta local
         int localPort;
         try {
-            localPort = Integer.parseInt(txtPortaLocal.getText().trim());
-            if (localPort <= 1024 || localPort > 65535) {
-                showError("Porta Local inválida. Escolha uma porta entre 1025 e 65535 (não reservada).");
+            localPort = Integer.parseInt(fldPortaLocal.getText().trim());
+            if (localPort <= 1024 || localPort > 65535) throw new NumberFormatException();
+        } catch (NumberFormatException ex) {
+            showErr("Porta Local inválida. Use um valor entre 1025 e 65535.");
+            return;
+        }
+
+        boolean isTCP      = radTCP.isSelected();
+        boolean serverMode = isTCP && cmbModo.getSelectedIndex() == 0;
+
+        String remoteIP   = fldIPRemoto.getText().trim();
+        int    remotePort = 0;
+
+        // Cliente TCP e UDP precisam de IP/porta remotos
+        if (!serverMode) {
+            if (remoteIP.isEmpty()) {
+                showErr("O campo 'IP Remoto' não pode estar vazio.");
                 return;
             }
-        } catch (NumberFormatException e) {
-            showError("A Porta Local deve ser um número inteiro válido.");
-            return;
-        }
-
-        // Validate remote port
-        int remotePort;
-        try {
-            remotePort = Integer.parseInt(txtPortaRemota.getText().trim());
-            if (remotePort <= 0 || remotePort > 65535) {
-                showError("Porta Remota inválida. Escolha uma porta entre 1 e 65535.");
+            try {
+                remotePort = Integer.parseInt(fldPortaRemota.getText().trim());
+                if (remotePort <= 0 || remotePort > 65535) throw new NumberFormatException();
+            } catch (NumberFormatException ex) {
+                showErr("Porta Remota inválida. Use um valor entre 1 e 65535.");
                 return;
             }
-        } catch (NumberFormatException e) {
-            showError("A Porta Remota deve ser um número inteiro válido.");
-            return;
         }
 
-        // Validate IP
-        String remoteIP = txtIPRemoto.getText().trim();
-        if (remoteIP.isEmpty()) {
-            showError("O IP Remoto não pode estar vazio.");
-            return;
-        }
-
-        // Validate Username
-        String username = txtUsername.getText().trim();
+        username = fldUsername.getText().trim();
         if (username.isEmpty()) {
-            showError("O Nome de Usuário não pode estar vazio.");
+            showErr("O campo 'Seu Nome' não pode estar vazio.");
             return;
         }
 
+        // Bloqueia os campos antes de conectar
+        setFieldsEnabled(false);
+        btnIniciar.setEnabled(false);
+
         try {
-            // Build the sender and receiver using ChatFactory
-            chatSender = ChatFactory.build(remoteIP, remotePort, localPort, this);
-            isConnected = true;
-
-            // Update UI State
-            lblStatus.setText("🟢 Conectado");
-            lblStatus.setForeground(new Color(46, 204, 113));
-            txtPortaLocal.setEnabled(false);
-            txtIPRemoto.setEnabled(false);
-            txtPortaRemota.setEnabled(false);
-            txtUsername.setEnabled(false);
-            btnConnect.setEnabled(false);
-            btnConnect.setText("Chat Ativo");
-
-            txtMessageInput.setEnabled(true);
-            btnEnviar.setEnabled(true);
-            txtMessageInput.requestFocusInWindow();
-
-            txtChatLog.append("=== Chat iniciado com sucesso! ===\n");
-            txtChatLog.append(String.format("Porta Local: %d | Destino: %s:%d\n", localPort, remoteIP, remotePort));
-            txtChatLog.append("==================================\n\n");
-
-        } catch (ChatException e) {
-            String causeMsg = (e.getCause() != null) ? e.getCause().getMessage() : e.getMessage();
-            showError("Falha ao iniciar o Chat UDP: " + causeMsg);
-        } catch (IllegalArgumentException e) {
-            showError("Erro de argumento: " + e.getMessage());
+            if (isTCP) {
+                if (serverMode) {
+                    // Aguarda conexão em thread separada (não bloqueia a EDT)
+                    logSystem("Aguardando conexão TCP na porta " + localPort + "…");
+                    final int lp = localPort;
+                    new Thread(() -> {
+                        try {
+                            Sender s = TCPReceiver.createServerMode(lp, this);
+                            SwingUtilities.invokeLater(() ->
+                                    onConnected(s, "TCP", localPort, "—", lp));
+                        } catch (ChatException ex) {
+                            SwingUtilities.invokeLater(() -> {
+                                showErr("Erro ao abrir servidor TCP: "
+                                        + ex.getCause().getMessage());
+                                setFieldsEnabled(true);
+                                btnIniciar.setEnabled(true);
+                            });
+                        }
+                    }).start();
+                    return; // onConnected será chamado pela thread
+                } else {
+                    Sender s = TCPReceiver.createClientMode(remoteIP, remotePort, this);
+                    onConnected(s, "TCP", localPort, remoteIP, remotePort);
+                }
+            } else {
+                Sender s = ChatFactory.build(remoteIP, remotePort, localPort, this);
+                onConnected(s, "UDP", localPort, remoteIP, remotePort);
+            }
+        } catch (ChatException ex) {
+            String detalhe = ex.getCause() != null
+                    ? ex.getCause().getMessage() : ex.getMessage();
+            showErr("Falha ao iniciar o chat: " + detalhe);
+            setFieldsEnabled(true);
+            btnIniciar.setEnabled(true);
         }
     }
 
-    private void sendMessage() {
-        if (!isConnected || chatSender == null) return;
+    private void onConnected(Sender s, String protocolo,
+                             int localPort, String remoteIP, int remotePort) {
+        this.sender    = s;
+        this.connected = true;
 
-        String text = txtMessageInput.getText().trim();
-        if (text.isEmpty()) return;
+        fldMensagem.setEnabled(true);
+        btnEnviar.setEnabled(true);
+        fldMensagem.requestFocusInWindow();
 
-        String username = txtUsername.getText().trim();
+        lblStatus.setText("● Conectado  [" + protocolo + "]");
+        lblStatus.setForeground(new Color(0, 130, 0));
 
-        // Format message as text::de::username
-        String messagePayload = String.format("%s%s%s", text, MessageContainer.FROM, username);
+        logSystem(String.format("Chat iniciado — protocolo: %s | porta local: %d | destino: %s:%d",
+                protocolo, localPort, remoteIP, remotePort));
+    }
 
+    private void setFieldsEnabled(boolean enabled) {
+        fldPortaLocal.setEnabled(enabled);
+        fldIPRemoto.setEnabled(enabled);
+        fldPortaRemota.setEnabled(enabled);
+        fldUsername.setEnabled(enabled);
+        radUDP.setEnabled(enabled);
+        radTCP.setEnabled(enabled);
+        cmbModo.setEnabled(enabled && radTCP.isSelected());
+        lblModo.setEnabled(enabled && radTCP.isSelected());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  LÓGICA DE ENVIO
+    // ══════════════════════════════════════════════════════════════════════
+
+    private void handleSend() {
+        if (!connected || sender == null) return;
+        String texto = fldMensagem.getText().trim();
+        if (texto.isEmpty()) return;
+
+        String payload = texto + MessageContainer.FROM + username;
         try {
-            chatSender.send(messagePayload);
-
-            // Append sent message to local view
-            txtChatLog.append(String.format("Eu (%s): %s\n", username, text));
-            txtMessageInput.setText("");
-            txtMessageInput.requestFocusInWindow();
-
-            // Auto-scroll
-            txtChatLog.setCaretPosition(txtChatLog.getDocument().getLength());
-
-        } catch (ChatException e) {
-            showError("Não foi possível enviar a mensagem: " + e.getMessage());
+            sender.send(payload);
+            log("[" + now() + "] Eu (" + username + "): " + texto);
+            fldMensagem.setText("");
+        } catch (ChatException ex) {
+            showErr("Erro ao enviar mensagem: " + ex.getMessage());
         }
     }
 
-    private void showError(String message) {
-        JOptionPane.showMessageDialog(this, message, "Erro", JOptionPane.ERROR_MESSAGE);
-    }
+    // ══════════════════════════════════════════════════════════════════════
+    //  MessageContainer
+    // ══════════════════════════════════════════════════════════════════════
 
-    // MessageContainer implementation
     @Override
     public void newMessage(String message) {
         if (message == null) return;
+        String msg = message.trim().replace("\u0000", "");
+        if (msg.isEmpty()) return;
 
-        // Trim null bytes from receiving buffer and whitespace
-        message = message.trim();
-        if (message.isEmpty()) return;
-
-        String sender = "Desconhecido";
-        String messageText = message;
-
-        if (message.contains(MessageContainer.FROM)) {
-            String[] parts = message.split(MessageContainer.FROM);
-            if (parts.length >= 2) {
-                messageText = parts[0];
-                sender = parts[1];
-            } else if (parts.length == 1) {
-                messageText = parts[0];
-            }
+        // Mensagens de sistema inseridas pelo TCPReceiver
+        if (msg.startsWith("[ TCP ]")) {
+            SwingUtilities.invokeLater(() -> logSystem(msg));
+            return;
         }
 
-        final String finalSender = sender;
-        final String finalMessageText = messageText;
+        String remetente = "?";
+        String texto     = msg;
+        if (msg.contains(MessageContainer.FROM)) {
+            String[] partes = msg.split(MessageContainer.FROM, 2);
+            texto     = partes[0].trim();
+            remetente = partes.length > 1 ? partes[1].trim() : "?";
+        }
 
-        // Update components safely on EDT
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                txtChatLog.append(String.format("%s: %s\n", finalSender, finalMessageText));
-                // Auto-scroll
-                txtChatLog.setCaretPosition(txtChatLog.getDocument().getLength());
-            }
-        });
+        final String r = remetente;
+        final String t = texto;
+        SwingUtilities.invokeLater(() ->
+                log("[" + now() + "] " + r + ": " + t));
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    //  UTILITÁRIOS
+    // ══════════════════════════════════════════════════════════════════════
+
+    private void log(String linha) {
+        txtLog.append(linha + "\n");
+        txtLog.setCaretPosition(txtLog.getDocument().getLength());
+    }
+
+    private void logSystem(String msg) {
+        log("--- " + msg + " ---");
+    }
+
+    private String now() {
+        return LocalTime.now().format(TIME_FMT);
+    }
+
+    private void showErr(String msg) {
+        JOptionPane.showMessageDialog(this, msg, "Erro", JOptionPane.ERROR_MESSAGE);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  MAIN
+    // ══════════════════════════════════════════════════════════════════════
+
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                new ChatGUI().setVisible(true);
-            }
+        SwingUtilities.invokeLater(() -> {
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception ignored) {}
+            new ChatGUI().setVisible(true);
         });
     }
 }
